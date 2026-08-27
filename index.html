@@ -1,0 +1,1610 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Mリーグ 観戦予想＆pt集計ツール</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            mGold: '#D4AF37',
+            mGoldDark: '#AA820A',
+            mDark: '#121212',
+            mCard: '#1E1E24',
+            mCardHeader: '#2A2A35',
+            mAccent: '#3B82F6'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #121212;
+      color: #E0E0E0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    input, select, button {
+      font-size: 16px !important; /* iOSの自動ズーム防止 */
+    }
+    .gold-gradient-text {
+      background: linear-gradient(135deg, #FFF099 0%, #D4AF37 50%, #997A15 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .gold-border {
+      border-color: rgba(212, 175, 55, 0.4);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #3A3A4A;
+      border-radius: 3px;
+    }
+    .touch-btn {
+      min-height: 48px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between custom-scrollbar">
+
+  <!-- Top App Bar -->
+  <header class="bg-mCard border-b border-gray-800 sticky top-0 z-50 px-4 py-3 flex items-center justify-between shadow-md">
+    <div class="flex items-center gap-2 cursor-pointer" onclick="app.navTo('menu')">
+      <i class="fa-solid fa-trophy text-mGold text-xl"></i>
+      <h1 class="font-bold text-lg tracking-wider gold-gradient-text">M-BET MANAGER</h1>
+    </div>
+    <div id="headerSubtitle" class="text-xs text-gray-400 font-medium">トップメニュー</div>
+  </header>
+
+  <!-- Main View Container -->
+  <main id="appContainer" class="flex-1 p-4 max-w-2xl mx-auto w-full pb-10">
+    <!-- Views will be dynamically injected here -->
+  </main>
+
+  <!-- Modal Container for editing and confirm actions -->
+  <div id="modalOverlay" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
+    <div id="modalContent" class="bg-mCard border gold-border rounded-xl w-full max-w-lg p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <!-- Modal Dynamic Content -->
+    </div>
+  </div>
+
+  <!-- Hidden File Input for Data Restore -->
+  <input type="file" id="importFileInput" accept=".json" class="hidden" onchange="app.importData(event)">
+
+  <script>
+    // Master Team & Player Data (10 Teams, 4 Players each)
+    const MASTER_TEAMS = [
+      { id: "DRI", name: "赤坂ドリブンズ", players: ["園田賢", "鈴木たろう", "浅見真紀", "渡辺太"] },
+      { id: "FURI", name: "EX風林火山", players: ["勝又健志", "二階堂亜樹", "松ヶ瀬隆弥", "二階堂瑠美"] },
+      { id: "SAK", name: "KADOKAWAサクラナイツ", players: ["堀慎吾", "岡田紗佳", "渋川難波", "阿久津翔太"] },
+      { id: "KON", name: "KONAMI麻雀格闘倶楽部", players: ["佐々木寿人", "滝沢和典", "伊達朱里紗", "高宮まり"] },
+      { id: "ABE", name: "渋谷ABEMAS", players: ["多井隆晴", "白鳥翔", "松本吉弘", "日向藍子"] },
+      { id: "PHE", name: "セガサミーフェニックス", players: ["茅森早香", "醍醐大", "浅井堂岐", "竹内元太"] },
+      { id: "RAI", name: "TEAM RAIDEN / 雷電", players: ["瀬戸熊直樹", "萩原聖人", "黒沢咲", "本田朋広"] },
+      { id: "BST", name: "BEAST X", players: ["猿川真寿", "菅原千瑛", "鈴木大介", "中田花奈"] },
+      { id: "PIR", name: "U-NEXT PIRATES", players: ["小林剛", "瑞原明奈", "鈴木優", "仲林圭"] },
+      { id: "EAR", name: "EARTH FRIENDS", players: ["アース選手A", "アース選手B", "アース選手C", "アース選手D"] }
+    ];
+
+    // Initial Default Data Schema
+    const DEFAULT_STORAGE = {
+      participants: [
+        { name: "参加者1", teams: ["DRI", "SAK"], players: ["園田賢", "堀慎吾", "岡田紗佳", "勝又健志", "多井隆晴", "小林剛", "瑞原明奈", "佐々木寿人", "伊達朱里紗", "茅森早香"] },
+        { name: "参加者2", teams: ["ABE", "PIR"], players: ["白鳥翔", "松本吉弘", "日向藍子", "仲林圭", "鈴木優", "萩原聖人", "瀬戸熊直樹", "滝沢和典", "高宮まり", "二階堂亜樹"] },
+        { name: "参加者3", teams: ["KON", "FURI"], players: ["松ヶ瀬隆弥", "二階堂瑠美", "浅見真紀", "渡辺太", "渋川難波", "阿久津翔太", "黒沢咲", "本田朋広", "猿川真寿", "菅原千瑛"] },
+        { name: "参加者4", teams: ["RAI", "PHE"], players: ["鈴木大介", "中田花奈", "醍醐大", "浅井堂岐", "竹内元太", "アース選手A", "アース選手B", "アース選手C", "アース選手D", "鈴木たろう"] }
+      ],
+      matches: [], // Recorded matches array
+      draftInput: null // Temporary input session state
+    };
+
+    class MBetApp {
+      constructor() {
+        this.data = this.loadStorage();
+        this.currentView = 'menu';
+        this.inputSession = null;
+        this.selectedStatusDate = new Date().toISOString().split('T')[0];
+        this.init();
+      }
+
+      init() {
+        this.render();
+      }
+
+      loadStorage() {
+        try {
+          const saved = localStorage.getItem('m_league_bet_app_data');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            return { ...DEFAULT_STORAGE, ...parsed };
+          }
+        } catch (e) {
+          console.error("Storage load failed", e);
+        }
+        return JSON.parse(JSON.stringify(DEFAULT_STORAGE));
+      }
+
+      saveStorage() {
+        try {
+          localStorage.setItem('m_league_bet_app_data', JSON.stringify(this.data));
+        } catch (e) {
+          alert("データ保存時にエラーが発生しました");
+        }
+      }
+
+      exportData() {
+        const jsonStr = JSON.stringify(this.data, null, 2);
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const dateStr = new Date().toISOString().split('T')[0];
+        a.href = url;
+        a.download = `m_league_bet_backup_${dateStr}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      triggerImport() {
+        document.getElementById('importFileInput').click();
+      }
+
+      importData(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const imported = JSON.parse(e.target.result);
+            if (imported.participants && imported.matches) {
+              this.data = imported;
+              this.saveStorage();
+              alert("データを正常に復元しました。");
+              this.navTo('menu');
+            } else {
+              alert("無効なバックアップデータ形式です。");
+            }
+          } catch (err) {
+            alert("JSONファイルの読み込みに失敗しました。");
+          }
+        };
+        reader.readAsText(file);
+      }
+
+      navTo(view, params = {}) {
+        this.currentView = view;
+        this.viewParams = params;
+        this.render();
+      }
+
+      render() {
+        const container = document.getElementById('appContainer');
+        const subtitle = document.getElementById('headerSubtitle');
+        container.innerHTML = '';
+
+        switch (this.currentView) {
+          case 'menu':
+            subtitle.innerText = "トップメニュー";
+            container.appendChild(this.renderMenuView());
+            break;
+          case 'matchInputStep1':
+            subtitle.innerText = "試合結果入力 (日付選択)";
+            container.appendChild(this.renderMatchInputStep1());
+            break;
+          case 'matchInputStep2':
+            subtitle.innerText = "試合結果入力 (卓数選択)";
+            container.appendChild(this.renderMatchInputStep2());
+            break;
+          case 'matchInputStep3':
+            subtitle.innerText = "試合結果入力 (チーム選択)";
+            container.appendChild(this.renderMatchInputStep3());
+            break;
+          case 'matchInputStep4':
+            subtitle.innerText = "試合結果入力 (選手・成績入力)";
+            container.appendChild(this.renderMatchInputStep4());
+            break;
+          case 'ptStatusDateSelect':
+            subtitle.innerText = "現在pt状況 (日付選択)";
+            container.appendChild(this.renderPtStatusDateSelectView());
+            break;
+          case 'ptStatusTeam':
+            subtitle.innerText = "現在pt状況 (チームpt)";
+            container.appendChild(this.renderPtStatusTeamView());
+            break;
+          case 'ptStatusPlayer':
+            subtitle.innerText = "現在pt状況 (選手pt)";
+            container.appendChild(this.renderPtStatusPlayerView());
+            break;
+          case 'ptStatusPeriod':
+            subtitle.innerText = "ピリオド集計";
+            container.appendChild(this.renderPtStatusPeriodView());
+            break;
+          case 'ptStatusTotalGain':
+            subtitle.innerText = "チーム獲得合計";
+            container.appendChild(this.renderPtStatusTotalGainView());
+            break;
+          case 'matchList':
+            subtitle.innerText = "試合結果一覧";
+            container.appendChild(this.renderMatchListView());
+            break;
+          case 'settings':
+            subtitle.innerText = "参加者集計条件設定";
+            container.appendChild(this.renderSettingsView());
+            break;
+          case 'settingsWizard':
+            subtitle.innerText = "集計条件編集ウィザード";
+            container.appendChild(this.renderSettingsWizardView());
+            break;
+          default:
+            container.appendChild(this.renderMenuView());
+        }
+      }
+
+      renderMenuView() {
+        const div = document.createElement('div');
+        div.className = "space-y-4 animate-fade-in";
+
+        const hasDraft = !!this.data.draftInput;
+
+        div.innerHTML = `
+          ${hasDraft ? `
+            <div class="bg-amber-950/60 border border-amber-500/50 p-4 rounded-xl flex items-center justify-between shadow-lg">
+              <div>
+                <p class="text-amber-300 font-bold text-sm"><i class="fa-solid fa-floppy-disk mr-2"></i>途中保存された試合結果データがあります</p>
+                <p class="text-xs text-amber-200/70 mt-1">保存日時: ${this.data.draftInput.timestamp || '不明'}</p>
+              </div>
+              <button onclick="app.resumeDraftSession()" class="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-3 py-2 rounded-lg shadow touch-btn flex items-center gap-1">
+                再開 <i class="fa-solid fa-arrow-right"></i>
+              </button>
+            </div>
+          ` : ''}
+
+          <div class="grid grid-cols-1 gap-3">
+            <button onclick="app.startNewMatchInput()" class="bg-mCard border gold-border hover:bg-gray-800 p-5 rounded-xl text-left shadow-lg flex items-center justify-between group touch-btn transition-all">
+              <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-mGold/10 border border-mGold/30 flex items-center justify-center text-mGold text-xl">
+                  <i class="fa-solid fa-pen-to-square"></i>
+                </div>
+                <div>
+                  <h2 class="font-bold text-lg text-white group-hover:text-mGold transition-colors">1. 試合結果入力</h2>
+                  <p class="text-xs text-gray-400 mt-0.5">対局日・チーム・成績の記録</p>
+                </div>
+              </div>
+              <i class="fa-solid fa-chevron-right text-gray-500 group-hover:text-mGold"></i>
+            </button>
+
+            <button onclick="app.navTo('ptStatusDateSelect')" class="bg-mCard border gold-border hover:bg-gray-800 p-5 rounded-xl text-left shadow-lg flex items-center justify-between group touch-btn transition-all">
+              <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 text-xl">
+                  <i class="fa-solid fa-chart-line"></i>
+                </div>
+                <div>
+                  <h2 class="font-bold text-lg text-white group-hover:text-mGold transition-colors">2. 現在pt状況確認</h2>
+                  <p class="text-xs text-gray-400 mt-0.5">参加者ごとのチーム・選手pt状況・ピリオド集計</p>
+                </div>
+              </div>
+              <i class="fa-solid fa-chevron-right text-gray-500 group-hover:text-mGold"></i>
+            </button>
+
+            <button onclick="app.navTo('matchList')" class="bg-mCard border gold-border hover:bg-gray-800 p-5 rounded-xl text-left shadow-lg flex items-center justify-between group touch-btn transition-all">
+              <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-xl">
+                  <i class="fa-solid fa-list-check"></i>
+                </div>
+                <div>
+                  <h2 class="font-bold text-lg text-white group-hover:text-mGold transition-colors">3. 試合結果一覧</h2>
+                  <p class="text-xs text-gray-400 mt-0.5">過去の全試合ログの確認・編集・修正</p>
+                </div>
+              </div>
+              <i class="fa-solid fa-chevron-right text-gray-500 group-hover:text-mGold"></i>
+            </button>
+
+            <button onclick="app.navTo('settings')" class="bg-mCard border gold-border hover:bg-gray-800 p-5 rounded-xl text-left shadow-lg flex items-center justify-between group touch-btn transition-all">
+              <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 text-xl">
+                  <i class="fa-solid fa-users-gear"></i>
+                </div>
+                <div>
+                  <h2 class="font-bold text-lg text-white group-hover:text-mGold transition-colors">4. 参加者集計条件設定</h2>
+                  <p class="text-xs text-gray-400 mt-0.5">参加者の指名チーム・選手の編集・管理</p>
+                </div>
+              </div>
+              <i class="fa-solid fa-chevron-right text-gray-500 group-hover:text-mGold"></i>
+            </button>
+          </div>
+
+          <!-- Google Drive / JSON Data Management Section -->
+          <div class="mt-8 p-4 bg-mCard/60 border border-gray-800 rounded-xl space-y-3">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+              <i class="fa-brands fa-google-drive text-emerald-400"></i> データバックアップ＆同期 (JSON)
+            </h3>
+            <p class="text-xs text-gray-400 leading-relaxed">
+              記録データ（試合ログ・指名状況）をJSONとしてダウンロード保存し、Googleドライブへバックアップ・復元できます。
+            </p>
+            <div class="grid grid-cols-2 gap-3 pt-1">
+              <button onclick="app.exportData()" class="bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-bold py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-2 touch-btn">
+                <i class="fa-solid fa-download text-mGold"></i> 全データ書き出し
+              </button>
+              <button onclick="app.triggerImport()" class="bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-bold py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-2 touch-btn">
+                <i class="fa-solid fa-upload text-blue-400"></i> データ呼び出し
+              </button>
+            </div>
+          </div>
+        `;
+        return div;
+      }
+
+      startNewMatchInput() {
+        const today = new Date().toISOString().split('T')[0];
+        this.inputSession = {
+          date: today,
+          tablesCount: 2, // 初期値 2
+          tables: [], // Stores teams, players, scores per game
+          currentStepIndex: 0, // 0:卓1ゲーム1, 1:卓2ゲーム1, 2:卓1ゲーム2, 3:卓2ゲーム2
+          timestamp: new Date().toLocaleString('ja-JP')
+        };
+        this.navTo('matchInputStep1');
+      }
+
+      resumeDraftSession() {
+        if (this.data.draftInput) {
+          this.inputSession = this.data.draftInput;
+          // Resume at step 4 or current step
+          this.navTo('matchInputStep4');
+        }
+      }
+
+      saveDraftSession() {
+        if (this.inputSession) {
+          this.inputSession.timestamp = new Date().toLocaleString('ja-JP');
+          this.data.draftInput = this.inputSession;
+          this.saveStorage();
+          alert("入力途中状態を仮保存しました。次回起動時に復元できます。");
+        }
+      }
+
+      renderMatchInputStep1() {
+        const div = document.createElement('div');
+        div.className = "bg-mCard border gold-border rounded-xl p-5 space-y-6 shadow-xl";
+
+        div.innerHTML = `
+          <div class="border-b border-gray-800 pb-3">
+            <span class="text-xs font-bold text-mGold uppercase">ステップ 1 / 4</span>
+            <h2 class="text-xl font-bold text-white mt-1">対局日付の選択</h2>
+          </div>
+
+          <div class="space-y-4">
+            <label class="block text-sm font-medium text-gray-300">試合開催日</label>
+            <div class="flex items-center gap-2">
+              <button type="button" id="btnPrevDay" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 p-3 rounded-lg text-lg touch-btn">
+                <i class="fa-solid fa-chevron-left"></i>
+              </button>
+              <input type="date" id="matchDateInput" value="${this.inputSession.date}" class="flex-1 bg-gray-900 border border-gray-700 rounded-lg p-3 text-white text-center font-bold text-lg focus:border-mGold outline-none">
+              <button type="button" id="btnNextDay" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 p-3 rounded-lg text-lg touch-btn">
+                <i class="fa-solid fa-chevron-right"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="flex gap-3 pt-4 border-t border-gray-800">
+            <button onclick="app.navTo('menu')" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold py-3 rounded-lg touch-btn">
+              キャンセル
+            </button>
+            <button id="btnStep1Next" class="flex-1 bg-mGold hover:bg-mGoldDark text-black font-bold py-3 rounded-lg shadow-lg touch-btn flex items-center justify-center gap-2">
+              決定 <i class="fa-solid fa-arrow-right"></i>
+            </button>
+          </div>
+        `;
+
+        setTimeout(() => {
+          const input = document.getElementById('matchDateInput');
+          document.getElementById('btnPrevDay').addEventListener('click', () => {
+            const d = new Date(input.value);
+            d.setDate(d.getDate() - 1);
+            input.value = d.toISOString().split('T')[0];
+          });
+          document.getElementById('btnNextDay').addEventListener('click', () => {
+            const d = new Date(input.value);
+            d.setDate(d.getDate() + 1);
+            input.value = d.toISOString().split('T')[0];
+          });
+          document.getElementById('btnStep1Next').addEventListener('click', () => {
+            this.inputSession.date = input.value;
+            this.navTo('matchInputStep2');
+          });
+        }, 0);
+
+        return div;
+      }
+
+      renderMatchInputStep2() {
+        const div = document.createElement('div');
+        div.className = "bg-mCard border gold-border rounded-xl p-5 space-y-6 shadow-xl";
+
+        div.innerHTML = `
+          <div class="border-b border-gray-800 pb-3">
+            <span class="text-xs font-bold text-mGold uppercase">ステップ 2 / 4</span>
+            <h2 class="text-xl font-bold text-white mt-1">開催卓数の選択</h2>
+          </div>
+
+          <div class="space-y-3">
+            <label class="block text-sm font-medium text-gray-300">同時並行卓数</label>
+            <div class="grid grid-cols-2 gap-4">
+              <label class="table-option border-2 p-4 rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all ${this.inputSession.tablesCount === 1 ? 'border-mGold bg-mGold/10' : 'border-gray-800 bg-gray-900'}">
+                <input type="radio" name="tablesCount" value="1" ${this.inputSession.tablesCount === 1 ? 'checked' : ''} class="hidden">
+                <span class="text-2xl font-bold text-white">1 卓</span>
+                <span class="text-xs text-gray-400 mt-1">計 2 試合を入力</span>
+              </label>
+
+              <label class="table-option border-2 p-4 rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all ${this.inputSession.tablesCount === 2 ? 'border-mGold bg-mGold/10' : 'border-gray-800 bg-gray-900'}">
+                <input type="radio" name="tablesCount" value="2" ${this.inputSession.tablesCount === 2 ? 'checked' : ''} class="hidden">
+                <span class="text-2xl font-bold text-white">2 卓</span>
+                <span class="text-xs text-gray-400 mt-1">1卓目・2卓目 同時（計4試合）</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="flex gap-3 pt-4 border-t border-gray-800">
+            <button onclick="app.navTo('matchInputStep1')" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold py-3 rounded-lg touch-btn">
+              戻る
+            </button>
+            <button id="btnStep2Next" class="flex-1 bg-mGold hover:bg-mGoldDark text-black font-bold py-3 rounded-lg shadow-lg touch-btn flex items-center justify-center gap-2">
+              決定 <i class="fa-solid fa-arrow-right"></i>
+            </button>
+          </div>
+        `;
+
+        setTimeout(() => {
+          const radios = document.querySelectorAll('input[name="tablesCount"]');
+          radios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+              this.inputSession.tablesCount = parseInt(e.target.value);
+              this.render();
+            });
+          });
+          document.getElementById('btnStep2Next').addEventListener('click', () => {
+            // Setup games structure according to table count
+            this.initGamesStructure();
+            this.navTo('matchInputStep3');
+          });
+        }, 0);
+
+        return div;
+      }
+
+      initGamesStructure() {
+        const count = this.inputSession.tablesCount;
+        // Total games: count * 2 (Round 1 Table 1, [Round 1 Table 2], Round 2 Table 1, [Round 2 Table 2])
+        const games = [];
+        if (count === 1) {
+          games.push({ round: 1, tableNum: 1, teams: ["", "", "", ""], players: [{}, {}, {}, {}] });
+          games.push({ round: 2, tableNum: 1, teams: ["", "", "", ""], players: [{}, {}, {}, {}] });
+        } else {
+          games.push({ round: 1, tableNum: 1, teams: ["", "", "", ""], players: [{}, {}, {}, {}] });
+          games.push({ round: 1, tableNum: 2, teams: ["", "", "", ""], players: [{}, {}, {}, {}] });
+          games.push({ round: 2, tableNum: 1, teams: ["", "", "", ""], players: [{}, {}, {}, {}] });
+          games.push({ round: 2, tableNum: 2, teams: ["", "", "", ""], players: [{}, {}, {}, {}] });
+        }
+        this.inputSession.games = games;
+        this.inputSession.currentStepIndex = 0;
+      }
+
+      renderMatchInputStep3() {
+        const div = document.createElement('div');
+        div.className = "bg-mCard border gold-border rounded-xl p-5 space-y-6 shadow-xl";
+
+        const currentIdx = this.inputSession.currentStepIndex;
+        const currentGame = this.inputSession.games[currentIdx];
+
+        div.innerHTML = `
+          <div class="border-b border-gray-800 pb-3 flex justify-between items-end">
+            <div>
+              <span class="text-xs font-bold text-mGold uppercase">ステップ 3 / 4</span>
+              <h2 class="text-xl font-bold text-white mt-1">対戦 4 チーム選択</h2>
+            </div>
+            <span class="text-xs font-bold px-2.5 py-1 bg-mGold/20 text-mGold border border-mGold/40 rounded-full">
+              【${currentGame.tableNum}卓目】 ${currentGame.round}波目
+            </span>
+          </div>
+
+          <p class="text-xs text-gray-400">
+            同じ対局周・同じ日付内において重複するチームは選択できません。
+          </p>
+
+          <div class="space-y-4">
+            ${[0, 1, 2, 3].map(pos => `
+              <div class="bg-gray-900 border border-gray-800 p-3 rounded-lg">
+                <label class="block text-xs text-gray-400 mb-1 font-bold">チーム ${pos + 1}</label>
+                <select id="selectTeam_${pos}" class="w-full bg-mCard border border-gray-700 text-white rounded-lg p-3 font-medium outline-none focus:border-mGold">
+                  <option value="">-- チームを選択 --</option>
+                  ${MASTER_TEAMS.map(t => `<option value="${t.id}" ${currentGame.teams[pos] === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+                </select>
+              </div>
+            `).join('')}
+          </div>
+
+          <div class="flex gap-3 pt-4 border-t border-gray-800">
+            <button onclick="app.navTo('matchInputStep2')" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold py-3 rounded-lg touch-btn">
+              戻る
+            </button>
+            <button id="btnStep3Next" class="flex-1 bg-mGold hover:bg-mGoldDark text-black font-bold py-3 rounded-lg shadow-lg touch-btn flex items-center justify-center gap-2">
+              決定 <i class="fa-solid fa-arrow-right"></i>
+            </button>
+          </div>
+        `;
+
+        setTimeout(() => {
+          document.getElementById('btnStep3Next').addEventListener('click', () => {
+            const selected = [
+              document.getElementById('selectTeam_0').value,
+              document.getElementById('selectTeam_1').value,
+              document.getElementById('selectTeam_2').value,
+              document.getElementById('selectTeam_3').value
+            ];
+
+            if (selected.some(t => !t)) {
+              alert("4チーム全てを選択してください。");
+              return;
+            }
+
+            // Check duplicate in same game
+            if (new Set(selected).size !== 4) {
+              alert("同じ試合に同一チームを重複して配置できません。");
+              return;
+            }
+
+            // Check duplicate across concurrent tables in same round
+            const sameRoundGames = this.inputSession.games.filter(g => g.round === currentGame.round);
+            const otherGameInRound = sameRoundGames.find(g => g !== currentGame);
+            if (otherGameInRound && otherGameInRound.teams.some(t => selected.includes(t))) {
+              alert("同じ対局周で別卓に出場しているチームを選択することはできません。");
+              return;
+            }
+
+            currentGame.teams = selected;
+            this.navTo('matchInputStep4');
+          });
+        }, 0);
+
+        return div;
+      }
+
+      renderMatchInputStep4() {
+        const div = document.createElement('div');
+        div.className = "bg-mCard border gold-border rounded-xl p-5 space-y-6 shadow-xl";
+
+        const currentIdx = this.inputSession.currentStepIndex;
+        const currentGame = this.inputSession.games[currentIdx];
+        const totalGames = this.inputSession.games.length;
+
+        div.innerHTML = `
+          <div class="border-b border-gray-800 pb-3 flex justify-between items-center">
+            <div>
+              <span class="text-xs font-bold text-mGold uppercase">ステップ 4 / 4 (${currentIdx + 1} / ${totalGames} 試合目)</span>
+              <h2 class="text-xl font-bold text-white mt-1">選手・成績入力</h2>
+            </div>
+            <span class="text-xs font-bold px-3 py-1 bg-mGold/20 text-mGold border border-mGold/40 rounded-full">
+              【${currentGame.tableNum}卓目】 ${currentGame.round}波目
+            </span>
+          </div>
+
+          <div class="space-y-6">
+            ${[0, 1, 2, 3].map(pos => {
+              const teamObj = MASTER_TEAMS.find(t => t.id === currentGame.teams[pos]);
+              const pData = currentGame.players[pos] || {};
+              return `
+                <div class="bg-gray-900 border border-gray-800 p-4 rounded-xl space-y-3">
+                  <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+                    <span class="font-bold text-mGold text-sm"><i class="fa-solid fa-shield-halved mr-1.5"></i>${teamObj ? teamObj.name : ''}</span>
+                    <span class="text-xs text-gray-500">枠 ${pos + 1}</span>
+                  </div>
+
+                  <!-- 選手選択 -->
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-1">出場選手</label>
+                    <select id="playerSel_${pos}" class="w-full bg-mCard border border-gray-700 text-white rounded-lg p-2.5 text-sm font-medium outline-none focus:border-mGold">
+                      <option value="">-- 選手選択 --</option>
+                      ${teamObj ? teamObj.players.map(p => `<option value="${p}" ${pData.name === p ? 'selected' : ''}>${p}</option>`).join('') : ''}
+                    </select>
+                  </div>
+
+                  <!-- pt入力 or 点数入力 -->
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs text-gray-400 mb-1">pt直接入力 (優先)</label>
+                      <input type="number" step="0.1" id="ptInput_${pos}" value="${pData.rawPt !== undefined ? pData.rawPt : ''}" placeholder="例: 58.4" class="w-full bg-mCard border border-gray-700 text-white rounded-lg p-2.5 text-sm outline-none focus:border-mGold">
+                    </div>
+                    <div>
+                      <label class="block text-xs text-gray-400 mb-1">点数入力</label>
+                      <select id="scoreInput_${pos}" class="w-full bg-mCard border border-gray-700 text-white rounded-lg p-2.5 text-sm outline-none focus:border-mGold">
+                        ${this.generateScoreOptions(pData.score !== undefined ? pData.score : 25000)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <!-- ペナルティpt -->
+                  <div>
+                    <label class="block text-xs text-red-400/80 mb-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i>ペナルティpt (マイナス)</label>
+                    <select id="penaltyInput_${pos}" class="w-full bg-mCard border border-gray-700 text-red-300 rounded-lg p-2.5 text-sm outline-none focus:border-red-500">
+                      ${this.generatePenaltyOptions(pData.penalty !== undefined ? pData.penalty : 0)}
+                    </select>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+
+          <!-- Bottom Actions Navigation -->
+          <div class="space-y-3 pt-4 border-t border-gray-800">
+            <div class="flex gap-2">
+              ${currentIdx > 0 ? `
+                <button id="btnPrevMatch" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold py-3 rounded-lg touch-btn text-xs">
+                  <i class="fa-solid fa-chevron-left"></i> 前試合へ
+                </button>
+              ` : ''}
+              <button onclick="app.saveDraftSession()" class="flex-1 bg-amber-900/60 hover:bg-amber-800/80 border border-amber-600/50 text-amber-200 font-bold py-3 rounded-lg touch-btn text-xs">
+                <i class="fa-solid fa-floppy-disk mr-1"></i> 途中保存
+              </button>
+            </div>
+
+            <button id="btnNextMatchSubmit" class="w-full bg-mGold hover:bg-mGoldDark text-black font-bold py-3.5 rounded-lg shadow-lg touch-btn flex items-center justify-center gap-2">
+              ${currentIdx < totalGames - 1 ? '確定して次の試合入力へ <i class="fa-solid fa-arrow-right"></i>' : '全試合確定＆保存 <i class="fa-solid fa-check"></i>'}
+            </button>
+          </div>
+        `;
+
+        setTimeout(() => {
+          if (document.getElementById('btnPrevMatch')) {
+            document.getElementById('btnPrevMatch').addEventListener('click', () => {
+              this.inputSession.currentStepIndex--;
+              this.render();
+            });
+          }
+
+          document.getElementById('btnNextMatchSubmit').addEventListener('click', () => {
+            if (this.validateAndSaveCurrentMatch(currentIdx)) {
+              if (currentIdx < totalGames - 1) {
+                this.inputSession.currentStepIndex++;
+                this.navTo('matchInputStep3');
+              } else {
+                // All games complete -> commit matches
+                this.commitInputSession();
+              }
+            }
+          });
+        }, 0);
+
+        return div;
+      }
+
+      generateScoreOptions(selectedVal) {
+        let options = '';
+        // Range: -1,000,000 to 1,000,000 in steps of 100
+        // To keep dropdown sensible, generate reasonable bounds around 25000 or custom select
+        const commonScores = [];
+        for (let s = 100000; s >= -50000; s -= 100) {
+          commonScores.push(s);
+        }
+        if (!commonScores.includes(selectedVal)) commonScores.push(selectedVal);
+        commonScores.sort((a,b) => b - a);
+
+        commonScores.forEach(s => {
+          options += `<option value="${s}" ${s === selectedVal ? 'selected' : ''}>${s.toLocaleString()} 点</option>`;
+        });
+        return options;
+      }
+
+      generatePenaltyOptions(selectedVal) {
+        let options = '';
+        for (let p = 0; p >= -1000; p -= 20) {
+          options += `<option value="${p}" ${p === selectedVal ? 'selected' : ''}>${p} pt</option>`;
+        }
+        return options;
+      }
+
+      validateAndSaveCurrentMatch(gameIdx) {
+        const game = this.inputSession.games[gameIdx];
+        const playerResults = [];
+
+        for (let i = 0; i < 4; i++) {
+          const name = document.getElementById(`playerSel_${i}`).value;
+          const rawPtVal = document.getElementById(`ptInput_${i}`).value;
+          const scoreVal = parseInt(document.getElementById(`scoreInput_${i}`).value);
+          const penaltyVal = parseInt(document.getElementById(`penaltyInput_${i}`).value);
+
+          if (!name) {
+            alert(`枠 ${i + 1} の出場選手を選択してください。`);
+            return false;
+          }
+
+          playerResults.push({
+            teamId: game.teams[i],
+            playerName: name,
+            rawPt: rawPtVal !== '' ? parseFloat(rawPtVal) : null,
+            score: scoreVal,
+            penalty: penaltyVal,
+            finalPt: 0
+          });
+        }
+
+        // Check calculation method
+        const isPtMode = playerResults.some(p => p.rawPt !== null);
+
+        if (isPtMode) {
+          // All must have pt
+          if (playerResults.some(p => p.rawPt === null)) {
+            alert("ptで記録する場合は、4選手全員のptを入力してください。");
+            return false;
+          }
+          const sumPt = playerResults.reduce((acc, p) => acc + p.rawPt, 0);
+          if (Math.abs(sumPt) > 0.01) {
+            alert(`4名の入力pt合計が 0.0pt になっていません (現在: ${sumPt.toFixed(1)}pt)。入力を修正してください。`);
+            return false;
+          }
+          playerResults.forEach(p => {
+            p.finalPt = p.rawPt;
+          });
+        } else {
+          // Score mode
+          const sumScore = playerResults.reduce((acc, p) => acc + p.score, 0);
+          if (sumScore !== 100000) {
+            alert(`4名の入力点数の合計が 100,000点 になっていません (現在: ${sumScore.toLocaleString()}点)。入力を修正してください。`);
+            return false;
+          }
+
+          // Calculate rank bonuses & base pts
+          // Base pt = (score - 30000) / 1000
+          // Sort by score desc to assign bonuses [50.0, 10.0, -10.0, -30.0]
+          const bonusTable = [50.0, 10.0, -10.0, -30.0];
+          const sorted = [...playerResults].sort((a, b) => b.score - a.score);
+
+          // Group by identical scores for tie-breaking bonus averaging
+          let i = 0;
+          while (i < 4) {
+            let j = i;
+            while (j < 4 && sorted[j].score === sorted[i].score) {
+              j++;
+            }
+            // Tied group from index i to j-1
+            const groupSize = j - i;
+            let bonusSum = 0;
+            for (let k = i; k < j; k++) bonusSum += bonusTable[k];
+            const avgBonus = bonusSum / groupSize;
+
+            for (let k = i; k < j; k++) {
+              sorted[k].calculatedBonus = avgBonus;
+              sorted[k].finalPt = parseFloat((((sorted[k].score - 30000) / 1000) + avgBonus).toFixed(1));
+            }
+            i = j;
+          }
+        }
+
+        game.players = playerResults;
+        return true;
+      }
+
+      commitInputSession() {
+        const date = this.inputSession.date;
+        const matchesToSave = this.inputSession.games.map(g => ({
+          id: 'match_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+          date: date,
+          tableNum: g.tableNum,
+          round: g.round,
+          players: g.players
+        }));
+
+        this.data.matches.push(...matchesToSave);
+        this.data.draftInput = null; // clear draft
+        this.saveStorage();
+
+        alert("試合結果を正常に記録しました！");
+        this.navTo('menu');
+      }
+
+      renderPtStatusDateSelectView() {
+        const div = document.createElement('div');
+        div.className = "bg-mCard border gold-border rounded-xl p-5 space-y-5 shadow-xl";
+
+        div.innerHTML = `
+          <div class="border-b border-gray-800 pb-3">
+            <h2 class="text-xl font-bold text-white">対象年月日を選択</h2>
+            <p class="text-xs text-gray-400 mt-1">選択した日付以前の試合結果を集計対象にします。</p>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-gray-400 mb-1">集計基準日</label>
+            <input type="date" id="statusDateInput" value="${this.selectedStatusDate}" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white text-center font-bold text-lg focus:border-mGold outline-none">
+          </div>
+
+          <button id="btnConfirmStatusDate" class="w-full bg-mGold hover:bg-mGoldDark text-black font-bold py-3.5 rounded-lg shadow-lg touch-btn flex items-center justify-center gap-2">
+            pt状況を確認する <i class="fa-solid fa-arrow-right"></i>
+          </button>
+        `;
+
+        setTimeout(() => {
+          document.getElementById('btnConfirmStatusDate').addEventListener('click', () => {
+            this.selectedStatusDate = document.getElementById('statusDateInput').value;
+            this.navTo('ptStatusTeam');
+          });
+        }, 0);
+
+        return div;
+      }
+
+      calculateAggregatedScores(untilDate) {
+        // Filter matches on or before untilDate
+        const filteredMatches = this.data.matches.filter(m => m.date <= untilDate);
+
+        // Sort chronologically for match count tracking
+        filteredMatches.sort((a, b) => {
+          if (a.date !== b.date) return a.date.localeCompare(b.date);
+          return a.tableNum - b.tableNum;
+        });
+
+        const teamStats = {};
+        const playerStats = {};
+        MASTER_TEAMS.forEach(t => {
+          teamStats[t.id] = { totalPt: 0, penaltyPt: 0, matchCount: 0, periodPts: { 1: 0, 2: 0, 3: 0 } };
+          t.players.forEach(p => {
+            playerStats[p] = { totalPt: 0, penaltyPt: 0, matchCount: 0 };
+          });
+        });
+
+        filteredMatches.forEach(m => {
+          m.players.forEach(p => {
+            if (teamStats[p.teamId]) {
+              teamStats[p.teamId].matchCount++;
+              const matchNum = teamStats[p.teamId].matchCount;
+              const netPt = p.finalPt + p.penalty;
+
+              teamStats[p.teamId].totalPt += netPt;
+              teamStats[p.teamId].penaltyPt += p.penalty;
+
+              // Period assignment
+              if (matchNum <= 40) teamStats[p.teamId].periodPts[1] += netPt;
+              else if (matchNum <= 80) teamStats[p.teamId].periodPts[2] += netPt;
+              else if (matchNum <= 120) teamStats[p.teamId].periodPts[3] += netPt;
+            }
+
+            if (playerStats[p.playerName]) {
+              playerStats[p.playerName].matchCount++;
+              playerStats[p.playerName].totalPt += (p.finalPt + p.penalty);
+              playerStats[p.playerName].penaltyPt += p.penalty;
+            }
+          });
+        });
+
+        return { teamStats, playerStats, filteredMatches };
+      }
+
+      renderPtStatusTeamView() {
+        const div = document.createElement('div');
+        div.className = "space-y-4";
+
+        const { teamStats } = this.calculateAggregatedScores(this.selectedStatusDate);
+
+        // Map participants with chosen teams
+        const participantScores = this.data.participants.map(p => {
+          const t1 = p.teams[0];
+          const t2 = p.teams[1];
+          const pt1 = teamStats[t1] ? teamStats[t1].totalPt : 0;
+          const pt2 = teamStats[t2] ? teamStats[t2].totalPt : 0;
+          return {
+            name: p.name,
+            team1: MASTER_TEAMS.find(t => t.id === t1)?.name || '-',
+            team2: MASTER_TEAMS.find(t => t.id === t2)?.name || '-',
+            pt1: pt1,
+            pt2: pt2,
+            totalPt: pt1 + pt2
+          };
+        });
+
+        // Sort participants by total team pt descending
+        participantScores.sort((a, b) => b.totalPt - a.totalPt);
+
+        // Find unchosen teams
+        const chosenTeamIds = new Set(this.data.participants.flatMap(p => p.teams));
+        const unchosenTeams = MASTER_TEAMS.filter(t => !chosenTeamIds.has(t.id));
+
+        div.innerHTML = `
+          <!-- Navigation Tabs -->
+          <div class="flex border-b border-gray-800 bg-mCard p-1 rounded-xl">
+            <button class="flex-1 py-2 text-xs font-bold rounded-lg bg-mGold text-black">チーム pt</button>
+            <button onclick="app.navTo('ptStatusPlayer')" class="flex-1 py-2 text-xs font-bold text-gray-400 hover:text-white">選手 pt</button>
+          </div>
+
+          <div class="flex justify-between items-center text-xs text-gray-400 px-1">
+            <span>対象基準日: <strong class="text-mGold">${this.selectedStatusDate}</strong> 以前</span>
+            <button onclick="app.navTo('ptStatusDateSelect')" class="text-blue-400 underline">日付変更</button>
+          </div>
+
+          <!-- Participants Team Standings -->
+          <div class="space-y-3">
+            ${participantScores.map((p, idx) => `
+              <div class="bg-mCard border gold-border p-4 rounded-xl shadow-lg relative overflow-hidden">
+                <div class="flex justify-between items-center border-b border-gray-800 pb-2 mb-2">
+                  <div class="flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full ${idx === 0 ? 'bg-mGold text-black font-extrabold' : 'bg-gray-800 text-gray-300'} flex items-center justify-center text-xs">
+                      ${idx + 1}
+                    </span>
+                    <span class="font-bold text-white text-base">${p.name}</span>
+                  </div>
+                  <span class="font-extrabold text-lg ${p.totalPt >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                    ${p.totalPt > 0 ? '+' : ''}${p.totalPt.toFixed(1)} <span class="text-xs">pt</span>
+                  </span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                  <div class="bg-gray-900/80 p-2 rounded border border-gray-800 flex justify-between">
+                    <span class="text-gray-400">${p.team1}</span>
+                    <span class="font-bold ${p.pt1 >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${p.pt1 > 0 ? '+' : ''}${p.pt1.toFixed(1)}</span>
+                  </div>
+                  <div class="bg-gray-900/80 p-2 rounded border border-gray-800 flex justify-between">
+                    <span class="text-gray-400">${p.team2}</span>
+                    <span class="font-bold ${p.pt2 >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${p.pt2 > 0 ? '+' : ''}${p.pt2.toFixed(1)}</span>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+
+          <!-- Unchosen Teams Block -->
+          ${unchosenTeams.length > 0 ? `
+            <div class="bg-gray-900/60 border border-gray-800 p-3 rounded-xl">
+              <h4 class="text-xs font-bold text-gray-400 mb-2"><i class="fa-solid fa-ghost mr-1"></i>指名なしチーム</h4>
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                ${unchosenTeams.map(t => {
+                  const pt = teamStats[t.id] ? teamStats[t.id].totalPt : 0;
+                  return `
+                    <div class="flex justify-between bg-mCard p-2 rounded border border-gray-800">
+                      <span class="text-gray-400">${t.name}</span>
+                      <span class="font-medium ${pt >= 0 ? 'text-gray-300' : 'text-rose-400'}">${pt > 0 ? '+' : ''}${pt.toFixed(1)}</span>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Secondary Navigation -->
+          <div class="grid grid-cols-2 gap-3 pt-2">
+            <button onclick="app.navTo('ptStatusPeriod')" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-mGold font-bold py-3 rounded-lg text-xs touch-btn flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-clock-rotate-left"></i> ピリオド集計画面
+            </button>
+            <button onclick="app.navTo('ptStatusTotalGain')" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-mGold font-bold py-3 rounded-lg text-xs touch-btn flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-coins"></i> チーム獲得合計
+            </button>
+          </div>
+
+          <button onclick="app.navTo('menu')" class="w-full bg-mCard border border-gray-800 text-gray-300 font-bold py-3 rounded-lg touch-btn mt-2">
+            トップメニューへ戻る
+          </button>
+        `;
+
+        return div;
+      }
+
+      renderPtStatusPlayerView() {
+        const div = document.createElement('div');
+        div.className = "space-y-4";
+
+        const { playerStats } = this.calculateAggregatedScores(this.selectedStatusDate);
+
+        const participantPlayerScores = this.data.participants.map(p => {
+          const playerList = p.players.map(pName => {
+            const stats = playerStats[pName] || { totalPt: 0 };
+            return { name: pName, pt: stats.totalPt };
+          });
+          const totalPt = playerList.reduce((acc, curr) => acc + curr.pt, 0);
+          return {
+            name: p.name,
+            players: playerList,
+            totalPt: totalPt
+          };
+        });
+
+        participantPlayerScores.sort((a, b) => b.totalPt - a.totalPt);
+
+        div.innerHTML = `
+          <!-- Navigation Tabs -->
+          <div class="flex border-b border-gray-800 bg-mCard p-1 rounded-xl">
+            <button onclick="app.navTo('ptStatusTeam')" class="flex-1 py-2 text-xs font-bold text-gray-400 hover:text-white">チーム pt</button>
+            <button class="flex-1 py-2 text-xs font-bold rounded-lg bg-mGold text-black">選手 pt</button>
+          </div>
+
+          <div class="flex justify-between items-center text-xs text-gray-400 px-1">
+            <span>対象基準日: <strong class="text-mGold">${this.selectedStatusDate}</strong> 以前</span>
+            <button onclick="app.navTo('ptStatusDateSelect')" class="text-blue-400 underline">日付変更</button>
+          </div>
+
+          <!-- Participants Player Standings -->
+          <div class="space-y-4">
+            ${participantPlayerScores.map((p, idx) => `
+              <div class="bg-mCard border gold-border p-4 rounded-xl shadow-lg space-y-2">
+                <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+                  <div class="flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full ${idx === 0 ? 'bg-mGold text-black font-extrabold' : 'bg-gray-800 text-gray-300'} flex items-center justify-center text-xs">
+                      ${idx + 1}
+                    </span>
+                    <span class="font-bold text-white text-base">${p.name}</span>
+                  </div>
+                  <span class="font-extrabold text-lg ${p.totalPt >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                    ${p.totalPt > 0 ? '+' : ''}${p.totalPt.toFixed(1)} <span class="text-xs">pt</span>
+                  </span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-1.5 text-xs pt-1">
+                  ${p.players.map(pObj => `
+                    <div class="bg-gray-900/80 p-2 rounded border border-gray-800/80 flex justify-between">
+                      <span class="text-gray-300 truncate max-w-[90px]">${pObj.name}</span>
+                      <span class="font-medium ${pObj.pt >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${pObj.pt > 0 ? '+' : ''}${pObj.pt.toFixed(1)}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+
+          <button onclick="app.navTo('menu')" class="w-full bg-mCard border border-gray-800 text-gray-300 font-bold py-3 rounded-lg touch-btn mt-4">
+            トップメニューへ戻る
+          </button>
+        `;
+
+        return div;
+      }
+
+      renderPtStatusPeriodView() {
+        const div = document.createElement('div');
+        div.className = "space-y-4";
+
+        const selectedPeriod = this.viewParams.period || 1;
+        const { teamStats } = this.calculateAggregatedScores(this.selectedStatusDate);
+
+        // Determine available periods
+        const maxMatchesAnyTeam = Math.max(...Object.values(teamStats).map(t => t.matchCount), 0);
+        let maxAvailablePeriod = 1;
+        if (maxMatchesAnyTeam > 80) maxAvailablePeriod = 3;
+        else if (maxMatchesAnyTeam > 40) maxAvailablePeriod = 2;
+
+        // Calculate Period Standings
+        const periodParticipantScores = this.data.participants.map(p => {
+          const pt1 = teamStats[p.teams[0]] ? teamStats[p.teams[0]].periodPts[selectedPeriod] : 0;
+          const pt2 = teamStats[p.teams[1]] ? teamStats[p.teams[1]].periodPts[selectedPeriod] : 0;
+          return {
+            name: p.name,
+            totalPt: pt1 + pt2
+          };
+        });
+
+        // Rank participants for this period
+        periodParticipantScores.sort((a, b) => b.totalPt - a.totalPt);
+
+        // Slope Gain Calculation Rules:
+        // Rank 1: Math.round((1stPt - 4thPt) * 10)
+        // Rank 2: Math.round((2ndPt - 3rdPt) * 10)
+        // Rank 3: Math.round((3rdPt - 2ndPt) * -10)
+        // Rank 4: Math.round((4thPt - 1stPt) * -10)
+        const p1Pt = periodParticipantScores[0]?.totalPt || 0;
+        const p2Pt = periodParticipantScores[1]?.totalPt || 0;
+        const p3Pt = periodParticipantScores[2]?.totalPt || 0;
+        const p4Pt = periodParticipantScores[3]?.totalPt || 0;
+
+        const gains = [
+          Math.round((p1Pt - p4Pt) * 10),
+          Math.round((p2Pt - p3Pt) * 10),
+          Math.round((p3Pt - p2Pt) * -10),
+          Math.round((p4Pt - p1Pt) * -10)
+        ];
+
+        div.innerHTML = `
+          <div class="bg-mCard border gold-border p-4 rounded-xl space-y-4">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+              <h2 class="font-bold text-white text-lg">ピリオド別集計</h2>
+              <select id="periodSelect" class="bg-gray-900 border border-mGold text-mGold font-bold text-sm rounded-lg px-3 py-1.5 outline-none">
+                <option value="1" ${selectedPeriod === 1 ? 'selected' : ''}>第1ピリオド (1~40戦)</option>
+                ${maxAvailablePeriod >= 2 ? `<option value="2" ${selectedPeriod === 2 ? 'selected' : ''}>第2ピリオド (41~80戦)</option>` : ''}
+                ${maxAvailablePeriod >= 3 ? `<option value="3" ${selectedPeriod === 3 ? 'selected' : ''}>第3ピリオド (81~120戦)</option>` : ''}
+              </select>
+            </div>
+
+            <div class="space-y-3">
+              ${periodParticipantScores.map((p, idx) => `
+                <div class="bg-gray-900/90 border border-gray-800 p-3.5 rounded-xl flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <span class="w-7 h-7 rounded-full bg-mGold/20 border border-mGold/40 text-mGold font-bold flex items-center justify-center text-xs">
+                      ${idx + 1}位
+                    </span>
+                    <div>
+                      <span class="font-bold text-white block text-sm">${p.name}</span>
+                      <span class="text-xs text-gray-400">チームpt: ${p.totalPt > 0 ? '+' : ''}${p.totalPt.toFixed(1)}</span>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-xs text-gray-400 block">獲得</span>
+                    <span class="font-extrabold text-base ${gains[idx] >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                      ${gains[idx] > 0 ? '+' : ''}${gains[idx]}
+                    </span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <div class="flex gap-3">
+            <button onclick="app.navTo('ptStatusTeam')" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold py-3 rounded-lg text-xs touch-btn">
+              チームptへ戻る
+            </button>
+            <button onclick="app.navTo('ptStatusTotalGain')" class="flex-1 bg-mGold hover:bg-mGoldDark text-black font-bold py-3 rounded-lg text-xs touch-btn">
+              チーム獲得合計へ
+            </button>
+          </div>
+        `;
+
+        setTimeout(() => {
+          document.getElementById('periodSelect').addEventListener('change', (e) => {
+            this.navTo('ptStatusPeriod', { period: parseInt(e.target.value) });
+          });
+        }, 0);
+
+        return div;
+      }
+
+      renderPtStatusTotalGainView() {
+        const div = document.createElement('div');
+        div.className = "space-y-4";
+
+        const { teamStats } = this.calculateAggregatedScores(this.selectedStatusDate);
+
+        // Compute gains across all available periods
+        const totalGainMap = {};
+        this.data.participants.forEach(p => {
+          totalGainMap[p.name] = { name: p.name, p1Gain: 0, p2Gain: 0, p3Gain: 0, totalGain: 0 };
+        });
+
+        [1, 2, 3].forEach(period => {
+          const scores = this.data.participants.map(p => {
+            const pt1 = teamStats[p.teams[0]] ? teamStats[p.teams[0]].periodPts[period] : 0;
+            const pt2 = teamStats[p.teams[1]] ? teamStats[p.teams[1]].periodPts[period] : 0;
+            return { name: p.name, totalPt: pt1 + pt2 };
+          });
+          scores.sort((a, b) => b.totalPt - a.totalPt);
+
+          const p1Pt = scores[0]?.totalPt || 0;
+          const p2Pt = scores[1]?.totalPt || 0;
+          const p3Pt = scores[2]?.totalPt || 0;
+          const p4Pt = scores[3]?.totalPt || 0;
+
+          const gains = [
+            Math.round((p1Pt - p4Pt) * 10),
+            Math.round((p2Pt - p3Pt) * 10),
+            Math.round((p3Pt - p2Pt) * -10),
+            Math.round((p4Pt - p1Pt) * -10)
+          ];
+
+          scores.forEach((s, idx) => {
+            if (period === 1) totalGainMap[s.name].p1Gain = gains[idx];
+            if (period === 2) totalGainMap[s.name].p2Gain = gains[idx];
+            if (period === 3) totalGainMap[s.name].p3Gain = gains[idx];
+          });
+        });
+
+        const list = Object.values(totalGainMap);
+        list.forEach(item => {
+          item.totalGain = item.p1Gain + item.p2Gain + item.p3Gain;
+        });
+        list.sort((a, b) => b.totalGain - a.totalGain);
+
+        div.innerHTML = `
+          <div class="bg-mCard border gold-border p-4 rounded-xl space-y-4 shadow-xl">
+            <div class="border-b border-gray-800 pb-3">
+              <h2 class="font-bold text-white text-lg">チーム獲得合計</h2>
+              <p class="text-xs text-gray-400 mt-0.5">全ピリオドの獲得pt合算順位です。</p>
+            </div>
+
+            <div class="space-y-3">
+              ${list.map((item, idx) => `
+                <div class="bg-gray-900 border border-gray-800 p-4 rounded-xl space-y-2">
+                  <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+                    <div class="flex items-center gap-2">
+                      <span class="w-6 h-6 rounded-full ${idx === 0 ? 'bg-mGold text-black font-extrabold' : 'bg-gray-800 text-gray-300'} flex items-center justify-center text-xs">
+                        ${idx + 1}
+                      </span>
+                      <span class="font-bold text-white text-base">${item.name}</span>
+                    </div>
+                    <span class="font-extrabold text-lg ${item.totalGain >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                      ${item.totalGain > 0 ? '+' : ''}${item.totalGain} <span class="text-xs text-gray-400">獲得</span>
+                    </span>
+                  </div>
+
+                  <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div class="bg-mCard p-2 rounded border border-gray-800">
+                      <span class="text-gray-400 block text-[10px]">第1P</span>
+                      <span class="font-medium ${item.p1Gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${item.p1Gain > 0 ? '+' : ''}${item.p1Gain}</span>
+                    </div>
+                    <div class="bg-mCard p-2 rounded border border-gray-800">
+                      <span class="text-gray-400 block text-[10px]">第2P</span>
+                      <span class="font-medium ${item.p2Gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${item.p2Gain > 0 ? '+' : ''}${item.p2Gain}</span>
+                    </div>
+                    <div class="bg-mCard p-2 rounded border border-gray-800">
+                      <span class="text-gray-400 block text-[10px]">第3P</span>
+                      <span class="font-medium ${item.p3Gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${item.p3Gain > 0 ? '+' : ''}${item.p3Gain}</span>
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <div class="flex gap-3">
+            <button onclick="app.navTo('ptStatusTeam')" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold py-3 rounded-lg text-xs touch-btn">
+              チームptへ戻る
+            </button>
+            <button onclick="app.navTo('menu')" class="flex-1 bg-mCard border border-gray-800 text-gray-300 font-bold py-3 rounded-lg text-xs touch-btn">
+              トップメニュー
+            </button>
+          </div>
+        `;
+
+        return div;
+      }
+
+      renderMatchListView() {
+        const div = document.createElement('div');
+        div.className = "space-y-4";
+
+        const matches = [...this.data.matches];
+        matches.sort((a, b) => b.date.localeCompare(a.date)); // Date Descending
+
+        div.innerHTML = `
+          <div class="flex justify-between items-center">
+            <h2 class="text-lg font-bold text-white">全試合結果ログ (${matches.length} 件)</h2>
+            <button onclick="app.navTo('menu')" class="text-xs text-mGold underline">トップへ</button>
+          </div>
+
+          ${matches.length === 0 ? `
+            <div class="bg-mCard border border-gray-800 p-8 rounded-xl text-center text-gray-500">
+              記録された試合結果はありません。
+            </div>
+          ` : `
+            <div class="space-y-3">
+              ${matches.map(m => `
+                <div class="bg-mCard border border-gray-800 p-4 rounded-xl space-y-3 shadow-md">
+                  <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-bold text-mGold bg-mGold/10 px-2 py-0.5 rounded border border-mGold/30">${m.date}</span>
+                      <span class="text-xs text-gray-300 font-bold">【${m.tableNum}卓】</span>
+                    </div>
+                    <button onclick="app.openEditMatchModal('${m.id}')" class="text-xs bg-gray-800 hover:bg-gray-700 text-mGold border border-gray-700 px-3 py-1.5 rounded touch-btn flex items-center gap-1">
+                      <i class="fa-solid fa-pen"></i> 編集
+                    </button>
+                  </div>
+
+                  <div class="grid grid-cols-1 gap-2 text-xs">
+                    ${m.players.map(p => {
+                      const teamObj = MASTER_TEAMS.find(t => t.id === p.teamId);
+                      return `
+                        <div class="bg-gray-900/80 p-2 rounded flex justify-between items-center border border-gray-800/60">
+                          <div>
+                            <span class="text-gray-400 font-bold mr-1.5">${teamObj?.name || p.teamId}</span>
+                            <span class="text-white">${p.playerName}</span>
+                          </div>
+                          <div class="text-right">
+                            <span class="font-bold ${p.finalPt >= 0 ? 'text-emerald-400' : 'text-rose-400'} mr-2">
+                              ${p.finalPt > 0 ? '+' : ''}${p.finalPt.toFixed(1)} pt
+                            </span>
+                            ${p.penalty !== 0 ? `<span class="text-red-400 text-[10px]">(${p.penalty}pt)</span>` : ''}
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        `;
+
+        return div;
+      }
+
+      openEditMatchModal(matchId) {
+        const match = this.data.matches.find(m => m.id === matchId);
+        if (!match) return;
+
+        const overlay = document.getElementById('modalOverlay');
+        const content = document.getElementById('modalContent');
+        overlay.classList.remove('hidden');
+
+        content.innerHTML = `
+          <div class="space-y-4">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+              <h3 class="font-bold text-white text-base">試合データ編集 (${match.date} 【${match.tableNum}卓】)</h3>
+              <button onclick="app.closeModal()" class="text-gray-400 text-lg">&times;</button>
+            </div>
+
+            <div class="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              ${match.players.map((p, idx) => {
+                const teamObj = MASTER_TEAMS.find(t => t.id === p.teamId);
+                return `
+                  <div class="bg-gray-900 p-3 rounded-lg space-y-2 border border-gray-800">
+                    <span class="text-xs font-bold text-mGold">${teamObj?.name}</span>
+                    <select id="editPlayer_${idx}" class="w-full bg-mCard border border-gray-700 text-white rounded p-2 text-xs">
+                      ${teamObj ? teamObj.players.map(pName => `<option value="${pName}" ${pName === p.playerName ? 'selected' : ''}>${pName}</option>`).join('') : ''}
+                    </select>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div>
+                        <label class="block text-[10px] text-gray-400">確定pt</label>
+                        <input type="number" step="0.1" id="editPt_${idx}" value="${p.finalPt}" class="w-full bg-mCard border border-gray-700 text-white rounded p-2 text-xs">
+                      </div>
+                      <div>
+                        <label class="block text-[10px] text-gray-400">ペナルティpt</label>
+                        <input type="number" id="editPenalty_${idx}" value="${p.penalty}" class="w-full bg-mCard border border-gray-700 text-white rounded p-2 text-xs">
+                      </div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <div class="flex gap-2 pt-2 border-t border-gray-800">
+              <button onclick="app.deleteSameDayMatches('${match.date}')" class="bg-rose-950/80 border border-rose-600/50 hover:bg-rose-900 text-rose-200 text-xs font-bold px-3 py-2.5 rounded-lg touch-btn">
+                同日試合を全削除
+              </button>
+              <button onclick="app.saveEditedMatch('${matchId}')" class="flex-1 bg-mGold text-black font-bold text-xs py-2.5 rounded-lg touch-btn">
+                保存更新
+              </button>
+            </div>
+          </div>
+        `;
+      }
+
+      saveEditedMatch(matchId) {
+        const match = this.data.matches.find(m => m.id === matchId);
+        if (!match) return;
+
+        for (let i = 0; i < 4; i++) {
+          match.players[i].playerName = document.getElementById(`editPlayer_${i}`).value;
+          match.players[i].finalPt = parseFloat(document.getElementById(`editPt_${i}`).value) || 0;
+          match.players[i].penalty = parseInt(document.getElementById(`editPenalty_${i}`).value) || 0;
+        }
+
+        this.saveStorage();
+        this.closeModal();
+        alert("試合データを更新しました。");
+        this.render();
+      }
+
+      deleteSameDayMatches(date) {
+        if (confirm(`日付 [${date}] の全試合結果データを削除しますか？この操作は取り消せません。`)) {
+          this.data.matches = this.data.matches.filter(m => m.date !== date);
+          this.saveStorage();
+          this.closeModal();
+          alert(`${date} の試合結果を削除しました。`);
+          this.render();
+        }
+      }
+
+      closeModal() {
+        document.getElementById('modalOverlay').classList.add('hidden');
+      }
+
+      renderSettingsView() {
+        const div = document.createElement('div');
+        div.className = "space-y-4";
+
+        div.innerHTML = `
+          <div class="bg-mCard border gold-border p-5 rounded-xl space-y-4 shadow-xl">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+              <h2 class="font-bold text-white text-lg">現在の参加者集計設定</h2>
+              <button onclick="app.startSettingsWizard()" class="bg-mGold hover:bg-mGoldDark text-black text-xs font-bold px-3 py-2 rounded-lg touch-btn flex items-center gap-1">
+                <i class="fa-solid fa-gear"></i> 設定を変更
+              </button>
+            </div>
+
+            <div class="space-y-4">
+              ${this.data.participants.map(p => {
+                const t1 = MASTER_TEAMS.find(t => t.id === p.teams[0]);
+                const t2 = MASTER_TEAMS.find(t => t.id === p.teams[1]);
+                return `
+                  <div class="bg-gray-900 border border-gray-800 p-4 rounded-xl space-y-2">
+                    <h3 class="font-bold text-mGold text-base">${p.name}</h3>
+                    <div class="text-xs text-gray-300 space-y-1">
+                      <p><strong>選択チーム:</strong> ${t1?.name || '-'}, ${t2?.name || '-'}</p>
+                      <p><strong>選択選手 (10名):</strong> ${p.players.join(', ')}</p>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <button onclick="app.navTo('menu')" class="w-full bg-mCard border border-gray-800 text-gray-300 font-bold py-3 rounded-lg touch-btn">
+            トップメニューへ戻る
+          </button>
+        `;
+
+        return div;
+      }
+
+      startSettingsWizard() {
+        this.wizardData = JSON.parse(JSON.stringify(this.data.participants));
+        this.wizardStep = 1; // Step 1: Names, Step 2: Teams, Step 3: Players
+        this.wizardParticipantIdx = 0;
+        this.navTo('settingsWizard');
+      }
+
+      renderSettingsWizardView() {
+        const div = document.createElement('div');
+        div.className = "bg-mCard border gold-border p-5 rounded-xl space-y-5 shadow-xl";
+
+        if (this.wizardStep === 1) {
+          // Step 1: Input Participant Names
+          div.innerHTML = `
+            <div class="border-b border-gray-800 pb-3">
+              <span class="text-xs font-bold text-mGold uppercase">ウィザード ステップ 1 / 3</span>
+              <h2 class="text-xl font-bold text-white mt-1">参加者名の設定</h2>
+            </div>
+
+            <div class="space-y-3">
+              ${[0, 1, 2, 3].map(i => `
+                <div>
+                  <label class="block text-xs text-gray-400 mb-1">参加者 ${i + 1} の名前</label>
+                  <input type="text" id="wizardName_${i}" value="${this.wizardData[i]?.name || '参加者' + (i + 1)}" class="w-full bg-gray-900 border border-gray-700 text-white rounded-lg p-3 font-medium outline-none focus:border-mGold">
+                </div>
+              `).join('')}
+            </div>
+
+            <div class="flex gap-3 pt-3">
+              <button onclick="app.navTo('settings')" class="flex-1 bg-gray-800 text-gray-300 font-bold py-3 rounded-lg touch-btn">キャンセル</button>
+              <button id="btnWizardStep1Next" class="flex-1 bg-mGold text-black font-bold py-3 rounded-lg touch-btn">次へ (チーム選択)</button>
+            </div>
+          `;
+
+          setTimeout(() => {
+            document.getElementById('btnWizardStep1Next').addEventListener('click', () => {
+              for (let i = 0; i < 4; i++) {
+                this.wizardData[i].name = document.getElementById(`wizardName_${i}`).value || `参加者${i + 1}`;
+              }
+              this.wizardStep = 2;
+              this.wizardParticipantIdx = 0;
+              this.render();
+            });
+          }, 0);
+        } else if (this.wizardStep === 2) {
+          // Step 2: Select 2 teams for current participant
+          const pIdx = this.wizardParticipantIdx;
+          const currentP = this.wizardData[pIdx];
+
+          div.innerHTML = `
+            <div class="border-b border-gray-800 pb-3">
+              <span class="text-xs font-bold text-mGold uppercase">ウィザード ステップ 2 / 3 (${pIdx + 1} / 4 人目)</span>
+              <h2 class="text-xl font-bold text-white mt-1">${currentP.name} の指名 2 チーム</h2>
+            </div>
+
+            <div class="space-y-4">
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">チーム 1</label>
+                <select id="wizardTeam1" class="w-full bg-gray-900 border border-gray-700 text-white rounded-lg p-3 text-sm font-medium outline-none focus:border-mGold">
+                  <option value="">-- 選択 --</option>
+                  ${MASTER_TEAMS.map(t => `<option value="${t.id}" ${currentP.teams[0] === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">チーム 2</label>
+                <select id="wizardTeam2" class="w-full bg-gray-900 border border-gray-700 text-white rounded-lg p-3 text-sm font-medium outline-none focus:border-mGold">
+                  <option value="">-- 選択 --</option>
+                  ${MASTER_TEAMS.map(t => `<option value="${t.id}" ${currentP.teams[1] === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+
+            <div class="flex gap-3 pt-3">
+              <button id="btnWizardStep2Next" class="w-full bg-mGold text-black font-bold py-3 rounded-lg touch-btn">
+                ${pIdx < 3 ? '決定して次の参加者へ' : '決定して選手選択へ'}
+              </button>
+            </div>
+          `;
+
+          setTimeout(() => {
+            document.getElementById('btnWizardStep2Next').addEventListener('click', () => {
+              const t1 = document.getElementById('wizardTeam1').value;
+              const t2 = document.getElementById('wizardTeam2').value;
+              if (!t1 || !t2) {
+                alert("2チームとも選択してください。");
+                return;
+              }
+              if (t1 === t2) {
+                alert("同じチームを2つ選択することはできません。");
+                return;
+              }
+              currentP.teams = [t1, t2];
+              if (pIdx < 3) {
+                this.wizardParticipantIdx++;
+              } else {
+                this.wizardStep = 3;
+                this.wizardParticipantIdx = 0;
+              }
+              this.render();
+            });
+          }, 0);
+        } else if (this.wizardStep === 3) {
+          // Step 3: Select 10 players for current participant
+          const pIdx = this.wizardParticipantIdx;
+          const currentP = this.wizardData[pIdx];
+
+          const allPlayers = MASTER_TEAMS.flatMap(t => t.players);
+
+          div.innerHTML = `
+            <div class="border-b border-gray-800 pb-3">
+              <span class="text-xs font-bold text-mGold uppercase">ウィザード ステップ 3 / 3 (${pIdx + 1} / 4 人目)</span>
+              <h2 class="text-xl font-bold text-white mt-1">${currentP.name} の指名 10 選手</h2>
+            </div>
+
+            <div class="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+              ${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => `
+                <div>
+                  <label class="block text-[10px] text-gray-400">選手 ${i + 1}</label>
+                  <select id="wizardPlayer_${i}" class="w-full bg-gray-900 border border-gray-700 text-white rounded p-2 text-xs">
+                    <option value="">-- 選択 --</option>
+                    ${allPlayers.map(p => `<option value="${p}" ${currentP.players[i] === p ? 'selected' : ''}>${p}</option>`).join('')}
+                  </select>
+                </div>
+              `).join('')}
+            </div>
+
+            <div class="flex gap-3 pt-3 border-t border-gray-800">
+              <button id="btnWizardStep3Next" class="w-full bg-mGold text-black font-bold py-3 rounded-lg touch-btn">
+                ${pIdx < 3 ? '決定して次の参加者へ' : '設定を保存・適用'}
+              </button>
+            </div>
+          `;
+
+          setTimeout(() => {
+            document.getElementById('btnWizardStep3Next').addEventListener('click', () => {
+              const selected = [];
+              for (let i = 0; i < 10; i++) {
+                selected.push(document.getElementById(`wizardPlayer_${i}`).value);
+              }
+              if (selected.some(p => !p)) {
+                alert("10選手全てを選択してください。");
+                return;
+              }
+              if (new Set(selected).size !== 10) {
+                alert("同じ選手を重複して指定することはできません。");
+                return;
+              }
+              currentP.players = selected;
+
+              if (pIdx < 3) {
+                this.wizardParticipantIdx++;
+                this.render();
+              } else {
+                // Save and finish
+                this.data.participants = this.wizardData;
+                this.saveStorage();
+                alert("参加者集計条件を保存・更新しました！");
+                this.navTo('settings');
+              }
+            });
+          }, 0);
+        }
+
+        return div;
+      }
+    }
+
+    // Initialize application single instance
+    const app = new MBetApp();
+  </script>
+</body>
+</html>
